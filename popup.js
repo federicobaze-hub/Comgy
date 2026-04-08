@@ -55,6 +55,7 @@ document.getElementById('btnSync').addEventListener('click', async () => {
   setLoading(true);
   document.getElementById('btnSync').disabled = true;
   syncResult.classList.remove('visible');
+  setStatus('on', 'Lettura post in corso (3 sec)...');
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -67,7 +68,8 @@ document.getElementById('btnSync').addEventListener('click', async () => {
       });
     } catch(e) { /* già iniettato, ok */ }
     
-    await new Promise(r => setTimeout(r, 600));
+    // Aspetta che LinkedIn carichi i post dinamicamente
+    await new Promise(r => setTimeout(r, 2500));
     
     let response;
     try {
