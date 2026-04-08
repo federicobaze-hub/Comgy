@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap');
+  :root { --bg:#000; --surface:#0e0e0e; --border:#1e1e1e; --accent:#00c896; --text:#f0f0f0; --muted:#555; --danger:#ff4455; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { width:340px; background:var(--bg); color:var(--text); font-family:'Outfit',sans-serif; font-size:13px; }
+
+  .header { display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid var(--border); }
+  .logo { font-family:'Space Mono',monospace; font-size:14px; font-weight:700; color:var(--accent); }
+  .badge { font-family:'Space Mono',monospace; font-size:9px; padding:3px 8px; border-radius:10px; background:var(--surface); border:1px solid var(--border); color:var(--muted); }
+
+  .status-bar { display:flex; align-items:center; gap:8px; padding:9px 16px; background:var(--surface); border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); font-family:'Space Mono',monospace; }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .dot.on { background:var(--accent); box-shadow:0 0 6px var(--accent); }
+  .dot.err { background:var(--danger); }
+
+  .section { padding:12px 16px; border-bottom:1px solid var(--border); }
+  .sl { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px; }
+
+  .btn { width:100%; padding:11px; background:var(--accent); color:#000; border:none; border-radius:6px; font-family:'Space Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.08em; cursor:pointer; transition:opacity .15s; margin-bottom:6px; }
+  .btn:hover { opacity:.85; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btn-ghost { background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+  .btn-ghost:hover { color:var(--text); border-color:var(--muted); opacity:1; }
+
+  textarea { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Outfit',sans-serif; font-size:12px; padding:9px 12px; outline:none; resize:none; min-height:70px; margin-bottom:8px; }
+  textarea:focus { border-color:var(--accent); }
+  textarea::placeholder { color:var(--muted); }
+
+  select { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; padding:8px 10px; outline:none; margin-bottom:8px; }
+
+  .results { max-height:180px; overflow-y:auto; }
+  .card { padding:10px 16px; border-bottom:1px solid var(--border); }
+  .card:last-child { border-bottom:none; }
+  .card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; }
+  .tag { font-family:'Space Mono',monospace; font-size:8px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding:2px 7px; border-radius:10px; }
+  .tag-pro { background:rgba(0,100,255,.1); color:#5599ff; border:1px solid rgba(0,100,255,.15); }
+  .tag-q   { background:rgba(0,200,150,.1); color:var(--accent); border:1px solid rgba(0,200,150,.2); }
+  .tag-ins { background:rgba(255,170,50,.1); color:#ffaa33; border:1px solid rgba(255,170,50,.15); }
+  .card-text { font-size:11px; line-height:1.6; color:#aaa; }
+  .copy-btn { font-family:'Space Mono',monospace; font-size:8px; padding:2px 8px; border-radius:10px; background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all .12s; }
+  .copy-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  .sync-result { padding:10px 16px; font-size:11px; color:var(--muted); font-family:'Space Mono',monospace; display:none; }
+  .sync-result.visible { display:block; }
+
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .spinner { width:10px; height:10px; border:1.5px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; display:none; }
+  .spinner.on { display:inline-block; }
+
+  .footer { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; }
+  .footer-link { font-size:10px; color:var(--muted); background:none; border:none; cursor:pointer; font-family:'Space Mono',monospace; transition:color .12s; }
+  .footer-link:hover { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">comgy.</div>
+  <div class="badge" id="pageBadge">—</div>
+</div>
+
+<div class="status-bar">
+  <div class="dot" id="statusDot"></div>
+  <span id="statusText">Rilevamento pagina...</span>
+  <div class="spinner" id="spinner"></div>
+</div>
+
+<!-- Sezione sync profilo -->
+<div class="section" id="sectionSync" style="display:none">
+  <div class="sl">Sincronizza profilo</div>
+  <button class="btn" id="btnSync">↑ SINCRONIZZA I TUOI POST</button>
+  <div class="sync-result" id="syncResult"></div>
+</div>
+
+<!-- Sezione genera commento -->
+<div class="section" id="sectionComment" style="display:none">
+  <div class="sl">Genera commento</div>
+  <button class="btn btn-ghost" id="btnGrabPost">↑ LEGGI POST DALLA PAGINA</button>
+  <textarea id="postInput" placeholder="...oppure incolla il testo del post"></textarea>
+  <select id="toneSelect">
+    <option value="mix">Mix automatico</option>
+    <option value="expert">Esperto</option>
+    <option value="question">Domanda</option>
+    <option value="insight">Insight</option>
+  </select>
+  <button class="btn" id="btnGenerate">GENERA</button>
+</div>
+
+<div class="results" id="results"></div>
+
+<div class="footer">
+  <span class="footer-link" id="btnOpenDashboard">↗ APRI DASHBOARD</span>
+  <button class="footer-link" id="btnSettings">impostazioni</button>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
