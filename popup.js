@@ -81,20 +81,24 @@ document.getElementById('btnSync').addEventListener('click', async () => {
     }
 
     if (response?.posts?.length) {
-      // Salva post in storage
       const existing = await chromeGet('syncedPosts') || [];
       const merged = mergePosts(existing, response.posts);
       await chromeSet({ syncedPosts: merged, lastSync: Date.now() });
 
-      // Leggi anche i follower dal profilo
+      // Leggi follower
       try {
         const profileInfo = await chrome.tabs.sendMessage(tab.id, { action: 'get_profile_info' });
-        if (profileInfo?.followers > 0) {
-          await chromeSet({ syncedFollowers: profileInfo.followers });
-        }
+        if (profileInfo?.followers > 0) await chromeSet({ syncedFollowers: profileInfo.followers });
       } catch(e) {}
 
-      syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aggiornata`;
+      // Passa i dati alla dashboard aprendo una tab con i dati encodati
+      const payload = encodeURIComponent(JSON.stringify({
+        posts: merged,
+        lastSync: Date.now(),
+      }));
+      chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
+
+      syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
       syncResult.classList.add('visible');
       setStatus('on', `${merged.length} post in archivio`);
     } else {

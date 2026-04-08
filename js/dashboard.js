@@ -585,4 +585,37 @@ setInterval(() => {
 }, 5000);
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+
+// Controlla se ci sono dati sync nell'URL (passati dall'estensione)
+function checkUrlSync() {
+  const params = new URLSearchParams(window.location.search);
+  const syncParam = params.get('sync');
+  if (!syncParam) return;
+
+  try {
+    const data = JSON.parse(decodeURIComponent(syncParam));
+    if (data.posts?.length) {
+      const existing = S.get('syncedPosts') || [];
+      const merged = mergePosts(existing, data.posts);
+      S.set('syncedPosts', merged);
+      S.set('lastSync', data.lastSync || Date.now());
+      state.posts = merged;
+    }
+  } catch(e) {}
+
+  // Pulisce l'URL senza ricaricare la pagina
+  window.history.replaceState({}, '', window.location.pathname);
+}
+
+function mergePosts(existing, newPosts) {
+  const merged = [...existing];
+  newPosts.forEach(p => {
+    if (!merged.find(e => e.text === p.text || (e.url && e.url === p.url && e.url !== window.location.href))) {
+      merged.push(p);
+    }
+  });
+  return merged.slice(0, 100);
+}
+
 init();
+checkUrlSync();
