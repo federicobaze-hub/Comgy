@@ -1,105 +1,93 @@
-// ── Comgy — linkedin.js ──────────────────────────────────────────────────────
-// Legge i tuoi post dal tuo profilo + engagement visibile
-// Legge post dal feed per generare commenti
+// ── Comgy — linkedin.js v3 ────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
-  // ── Sync profilo: legge i tuoi post con engagement ────────────────────────
   if (msg.action === 'sync_profile') {
     const posts = [];
+    const seen = new Set();
 
-    // Selettori per profilo + recent-activity
-    const cardSelectors = [
+    // Approccio 1: selettori classici
+    const selectors = [
       'div.feed-shared-update-v2',
       'div[data-urn*="activity"]',
+      'div[data-id*="activity"]',
       'li.profile-creator-shared-feed-update__container',
       'div.profile-creator-shared-feed-update',
       'div[class*="occludable-update"]',
-      'div[data-id*="activity"]',
+      'article',
     ];
 
     let cards = [];
-    for (const sel of cardSelectors) {
-      cards = [...document.querySelectorAll(sel)];
-      if (cards.length > 0) break;
+    for (const sel of selectors) {
+      const found = [...document.querySelectorAll(sel)];
+      if (found.length > 0) { cards = found; break; }
     }
 
-    // Fallback aggressivo per recent-activity
+    // Approccio 2: cerca tutti i div con testo lungo e pulsante like
     if (cards.length === 0) {
-      const allDivs = [...document.querySelectorAll('div')];
-      cards = allDivs.filter(el => {
-        const txt = el.innerText || '';
-        const hasText = txt.length > 80 && txt.length < 3000;
-        const hasLike = el.querySelector('button[aria-label*="reaction"], span[aria-label*="reaction"], .social-details-social-counts__reactions-count');
-        return hasText && hasLike;
-      }).slice(0, 20);
+      cards = [...document.querySelectorAll('div')].filter(el => {
+        const txt = (el.innerText || '').trim();
+        if (txt.length < 100 || txt.length > 5000) return false;
+        const hasLike = el.querySelector('button[aria-label*="eaction"], button[aria-label*="Like"], button[aria-label*="like"], span[data-reaction]');
+        return !!hasLike;
+      });
+    }
+
+    // Approccio 3: fallback totale — prende tutti i blocchi di testo con span[dir=ltr]
+    if (cards.length === 0) {
+      const spans = [...document.querySelectorAll('span[dir="ltr"]')]
+        .filter(s => s.innerText?.trim().length > 80);
+      spans.forEach(span => {
+        const txt = span.innerText.trim();
+        if (!seen.has(txt)) {
+          seen.add(txt);
+          posts.push({ text: txt, date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href });
+        }
+      });
     }
 
     cards.forEach(card => {
       try {
-        // Testo del post
         const textEl = card.querySelector(
-          '.feed-shared-update-v2__description .break-words, ' +
-          '.feed-shared-text .break-words, ' +
-          '.update-components-text .break-words, ' +
+          '.feed-shared-update-v2__description, ' +
+          '.feed-shared-text, ' +
+          '.update-components-text, ' +
+          '[class*="commentary"], ' +
           'span[dir="ltr"]'
         );
-        const text = textEl?.innerText?.trim() || '';
-        if (!text || text.length < 20) return;
+        const text = (textEl?.innerText || card.innerText || '').trim().slice(0, 2000);
+        if (!text || text.length < 50 || seen.has(text)) return;
+        seen.add(text);
 
-        // Data
-        const dateEl = card.querySelector('time, .feed-shared-actor__sub-description span[aria-hidden="true"]');
-        const date = dateEl?.innerText?.trim() || dateEl?.getAttribute('datetime') || '';
+        const likesEl = card.querySelector('[aria-label*="reaction"], .social-details-social-counts__reactions-count, [class*="reaction-count"]');
+        const likes = parseInt((likesEl?.innerText || '0').replace(/[^0-9]/g,'')) || 0;
 
-        // Like / reactions
-        const likesEl = card.querySelector(
-          '.social-details-social-counts__reactions-count, ' +
-          'button[aria-label*="reaction"] span, ' +
-          '.social-details-social-counts__count-value'
-        );
-        const likes = parseInt(likesEl?.innerText?.replace(/[^0-9]/g, '') || '0') || 0;
+        const commentsEl = card.querySelector('[aria-label*="comment"], .social-details-social-counts__comments, [class*="comment-count"]');
+        const comments = parseInt((commentsEl?.innerText || '0').replace(/[^0-9]/g,'')) || 0;
 
-        // Commenti
-        const commentsEl = card.querySelector(
-          'button[aria-label*="comment"] span, ' +
-          '.social-details-social-counts__comments span'
-        );
-        const comments = parseInt(commentsEl?.innerText?.replace(/[^0-9]/g, '') || '0') || 0;
-
-        // Impression / visualizzazioni (solo creator, non sempre visibili)
-        const impressionEl = card.querySelector(
-          '.feed-shared-social-action-bar__view-count, ' +
-          'button[aria-label*="impression"], ' +
-          'span[aria-label*="impression"]'
-        );
-        const impressions = parseInt(impressionEl?.innerText?.replace(/[^0-9]/g, '') || '0') || 0;
-
-        // Tipo contenuto (testo, immagine, video, link)
         let type = 'text';
-        if (card.querySelector('video, .feed-shared-linkedin-video')) type = 'video';
-        else if (card.querySelector('img.ivm-view-attr__img--centered, .feed-shared-image')) type = 'image';
-        else if (card.querySelector('.feed-shared-article, .feed-shared-external-video')) type = 'link';
+        if (card.querySelector('video')) type = 'video';
+        else if (card.querySelector('img[class*="ivm"], [class*="image"]')) type = 'image';
+        else if (card.querySelector('[class*="article"], [class*="external"]')) type = 'link';
 
-        // URL post
-        const linkEl = card.querySelector('a[href*="activity"]');
-        const url = linkEl?.href?.split('?')[0] || '';
+        const linkEl = card.querySelector('a[href*="activity"], a[href*="ugcPost"]');
+        const url = linkEl?.href?.split('?')[0] || window.location.href;
 
-        posts.push({ text, date, likes, comments, impressions, type, url });
-
-      } catch (e) { /* skip */ }
+        posts.push({ text, date: '', likes, comments, impressions: 0, type, url });
+      } catch(e) {}
     });
 
     sendResponse({ posts });
     return true;
   }
 
-  // ── Leggi post dal feed per generare commento ─────────────────────────────
   if (msg.action === 'get_post_text') {
     let text = '';
     const selectors = [
       '.feed-shared-update-v2__description .break-words',
       '.feed-shared-text .break-words',
       '.update-components-text .break-words',
+      '[class*="commentary"] span[dir="ltr"]',
       'span[dir="ltr"]',
     ];
     for (const sel of selectors) {
@@ -113,31 +101,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
-  // ── Leggi info base profilo ───────────────────────────────────────────────
   if (msg.action === 'get_profile_info') {
-    const nameEl = document.querySelector('h1.text-heading-xlarge, h1');
-    const followerEl = document.querySelector(
-      'span[aria-label*="follower"], ' +
-      '.artdeco-tabpanel span:contains("follower"), ' +
-      '.profile-creator-shared-feed-update__header span'
-    );
-
-    // Cerca follower in modo più aggressivo
     let followers = 0;
-    document.querySelectorAll('span, button').forEach(el => {
-      const t = el.innerText?.toLowerCase() || '';
-      if (t.includes('follower') && t.length < 30) {
-        const num = parseInt(t.replace(/[^0-9]/g, ''));
-        if (num > 0) followers = num;
+    document.querySelectorAll('span, button, a').forEach(el => {
+      const t = (el.innerText || '').toLowerCase().trim();
+      if ((t.includes('follower') || t.includes('seguac')) && t.length < 40) {
+        const num = parseInt(t.replace(/[^0-9]/g,''));
+        if (num > 0) followers = Math.max(followers, num);
       }
     });
-
-    sendResponse({
-      name: nameEl?.innerText?.trim() || '',
-      followers,
-      url: window.location.href.split('?')[0],
-    });
+    const nameEl = document.querySelector('h1');
+    sendResponse({ name: nameEl?.innerText?.trim() || '', followers, url: window.location.href.split('?')[0] });
     return true;
   }
-
 });
