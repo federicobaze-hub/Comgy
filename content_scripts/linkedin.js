@@ -8,17 +8,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action === 'sync_profile') {
     const posts = [];
 
-    // Selettori per i post sul profilo personale
+    // Selettori per profilo + recent-activity
     const cardSelectors = [
       'div.feed-shared-update-v2',
       'div[data-urn*="activity"]',
       'li.profile-creator-shared-feed-update__container',
+      'div.profile-creator-shared-feed-update',
+      'div[class*="occludable-update"]',
+      'div[data-id*="activity"]',
     ];
 
     let cards = [];
     for (const sel of cardSelectors) {
       cards = [...document.querySelectorAll(sel)];
       if (cards.length > 0) break;
+    }
+
+    // Fallback aggressivo per recent-activity
+    if (cards.length === 0) {
+      const allDivs = [...document.querySelectorAll('div')];
+      cards = allDivs.filter(el => {
+        const txt = el.innerText || '';
+        const hasText = txt.length > 80 && txt.length < 3000;
+        const hasLike = el.querySelector('button[aria-label*="reaction"], span[aria-label*="reaction"], .social-details-social-counts__reactions-count');
+        return hasText && hasLike;
+      }).slice(0, 20);
     }
 
     cards.forEach(card => {

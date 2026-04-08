@@ -247,24 +247,64 @@ function renderScore() {
 }
 
 // ── Growth Calculator ─────────────────────────────────────────────────────────
-function calcGrowth() {
-  const postsPerWeek  = parseFloat(document.getElementById('growthPosts').value) || 3;
-  const commentsPerDay = parseFloat(document.getElementById('growthComments').value) || 5;
-  const followers     = parseFloat(document.getElementById('growthFollowers').value) || (state.profile?.followers || 500);
-  const months        = parseInt(document.getElementById('growthMonths').value) || 6;
-  const quality       = parseInt(document.getElementById('growthQuality').value) || 6;
+function calcContentQuality() {
+  // Calcola qualità contenuto automaticamente dai post sincronizzati (1-10)
+  const posts = state.posts;
+  const followers = state.profile?.followers || 1;
+  if (posts.length === 0) return 5; // default se nessun dato
 
-  // Aggiorna follower dal profilo se disponibile
-  if (state.profile?.followers && !document.getElementById('growthFollowers').value) {
-    document.getElementById('growthFollowers').value = state.profile.followers;
+  const avgEng = posts.reduce((s, p) => s + p.likes + p.comments, 0) / posts.length;
+  const engRate = (avgEng / followers) * 100;
+  const typeVariety = new Set(posts.map(p => p.type)).size;
+  const avgLen = posts.reduce((s, p) => s + p.text.length, 0) / posts.length;
+
+  // Formula qualità: engagement rate + varietà + lunghezza media
+  let q = 3; // base
+  if (engRate > 5) q += 3;
+  else if (engRate > 2) q += 2;
+  else if (engRate > 0.5) q += 1;
+  if (typeVariety >= 3) q += 2;
+  else if (typeVariety >= 2) q += 1;
+  if (avgLen > 500) q += 1;
+  else if (avgLen > 200) q += 0.5;
+
+  return Math.min(Math.round(q), 10);
+}
+
+function calcGrowth() {
+  const postsPerWeek   = parseFloat(document.getElementById('growthPosts').value) || 3;
+  const commentsPerDay = parseFloat(document.getElementById('growthComments').value) || 5;
+  const months         = parseInt(document.getElementById('growthMonths').value) || 6;
+
+  // Auto-fill follower dal profilo sincronizzato
+  const profileFollowers = state.profile?.followers || 0;
+  const syncedFollowers  = S.get('syncedFollowers') || 0;
+  const followers = syncedFollowers || profileFollowers || parseFloat(document.getElementById('growthFollowers').value) || 500;
+
+  // Aggiorna il campo solo se vuoto o zero
+  const followersInput = document.getElementById('growthFollowers');
+  if (followers > 0 && (!followersInput.value || followersInput.value === '0')) {
+    followersInput.value = followers;
   }
 
-  // Modello crescita LinkedIn (basato su benchmark settoriali)
-  // Ogni post porta in media X nuovi follower in base a: qualità, frequenza, engagement attuale
-  // I commenti amplificano la visibilità del 15-25%
-  const qualityMultiplier = 0.5 + (quality / 10) * 1.5; // 0.5x - 2x
+  // Qualità calcolata automaticamente dai post
+  const quality = calcContentQuality();
+  const qualitySlider = document.getElementById('growthQuality');
+  qualitySlider.value = quality;
+  document.getElementById('qualityVal').textContent = quality;
+
+  // Mostra label qualità auto-calcolata
+  const qualityLabel = document.getElementById('qualityAutoLabel');
+  if (qualityLabel) {
+    const posts = state.posts;
+    qualityLabel.textContent = posts.length > 0
+      ? `calcolata automaticamente su ${posts.length} post sincronizzati`
+      : 'sincronizza i post per il calcolo automatico';
+  }
+
+  const qualityMultiplier = 0.5 + (quality / 10) * 1.5;
   const baseFollowersPerPost = followers < 500 ? 2 : followers < 2000 ? 4 : followers < 10000 ? 8 : 12;
-  const commentBoost = 1 + (commentsPerDay * 0.015); // ogni commento aggiunge ~1.5%
+  const commentBoost = 1 + (commentsPerDay * 0.015);
   const weeklyGrowthRate = (postsPerWeek * baseFollowersPerPost * qualityMultiplier * commentBoost) / followers;
 
   const projections = [];
@@ -296,14 +336,14 @@ function calcGrowth() {
       </div>`).join('')}
   `;
 
-  // Ipotesi
   document.getElementById('growthAssumptions').innerHTML = `
-    → ${postsPerWeek} post/settimana × qualità ${quality}/10 × ${commentsPerDay} commenti/giorno<br>
+    → ${postsPerWeek} post/settimana × qualità ${quality}/10 (auto) × ${commentsPerDay} commenti/giorno<br>
+    → Follower attuali: ${followers.toLocaleString('it')} ${syncedFollowers ? '(da sync LinkedIn)' : '(da profilo)'}<br>
     → Reach stimata per post: ~${Math.round(followers * 0.08 * qualityMultiplier)} persone<br>
-    → Conversione follower stimata: ~${(weeklyGrowthRate * 100).toFixed(2)}%/settimana<br>
-    → Boost commenti: +${((commentBoost - 1) * 100).toFixed(0)}% sulla visibilità<br>
+    → Conversione follower: ~${(weeklyGrowthRate * 100).toFixed(2)}%/settimana<br>
+    → Boost commenti: +${((commentBoost - 1) * 100).toFixed(0)}% visibilità<br>
     <span style="color:var(--muted);font-size:11px;margin-top:8px;display:block">
-      Modello basato su benchmark LinkedIn B2B Italia. I risultati reali variano in base a settore, network e qualità effettiva dei contenuti.
+      Modello basato su benchmark LinkedIn B2B Italia. La qualità contenuto è calcolata automaticamente da engagement rate, varietà formati e lunghezza media dei post.
     </span>
   `;
 }

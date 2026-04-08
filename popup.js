@@ -1,6 +1,6 @@
 // ── Comgy Extension v2 — popup.js ────────────────────────────────────────────
 
-const DASHBOARD_URL = 'https://comgy.vercel.app'; // cambia con URL reale
+const DASHBOARD_URL = 'https://comgy.vercel.app';
 
 // DOM
 const statusDot  = document.getElementById('statusDot');
@@ -72,6 +72,14 @@ document.getElementById('btnSync').addEventListener('click', async () => {
       const existing = await chromeGet('syncedPosts') || [];
       const merged = mergePosts(existing, response.posts);
       await chromeSet({ syncedPosts: merged, lastSync: Date.now() });
+
+      // Leggi anche i follower dal profilo
+      try {
+        const profileInfo = await chrome.tabs.sendMessage(tab.id, { action: 'get_profile_info' });
+        if (profileInfo?.followers > 0) {
+          await chromeSet({ syncedFollowers: profileInfo.followers });
+        }
+      } catch(e) {}
 
       syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aggiornata`;
       syncResult.classList.add('visible');
