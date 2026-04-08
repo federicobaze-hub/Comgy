@@ -58,13 +58,26 @@ document.getElementById('btnSync').addEventListener('click', async () => {
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Inietta sempre lo script prima di mandare il messaggio
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content_scripts/linkedin.js']
+      });
+    } catch(e) { /* già iniettato, ok */ }
+    
+    await new Promise(r => setTimeout(r, 600));
+    
     let response;
     try {
       response = await chrome.tabs.sendMessage(tab.id, { action: 'sync_profile' });
-    } catch {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
-      await new Promise(r => setTimeout(r, 500));
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'sync_profile' });
+    } catch(e) {
+      syncResult.textContent = 'Errore comunicazione — ricarica la pagina LinkedIn e riprova';
+      syncResult.classList.add('visible');
+      setLoading(false);
+      document.getElementById('btnSync').disabled = false;
+      return;
     }
 
     if (response?.posts?.length) {
