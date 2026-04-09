@@ -1,115 +1,97 @@
-// ── Comgy — linkedin.js v3 ────────────────────────────────────────────────────
+// ── Comgy — linkedin.js v4 ────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
+  // ── Sync: legge tutto il testo visibile e cerca post ─────────────────────
   if (msg.action === 'sync_profile') {
     const posts = [];
     const seen = new Set();
 
-    // Approccio 1: selettori classici
-    const selectors = [
-      'div.feed-shared-update-v2',
-      'div[data-urn*="activity"]',
-      'div[data-id*="activity"]',
-      'li.profile-creator-shared-feed-update__container',
-      'div.profile-creator-shared-feed-update',
-      'div[class*="occludable-update"]',
-      'article',
-    ];
+    // Metodo 1: cerca elementi con testo lungo (post tipici 100-3000 chars)
+    const allEls = document.querySelectorAll('p, div, span, article');
+    const candidates = [];
 
-    let cards = [];
-    for (const sel of selectors) {
-      const found = [...document.querySelectorAll(sel)];
-      if (found.length > 0) { cards = found; break; }
+    allEls.forEach(el => {
+      // Solo elementi diretti senza figli con testo (evita duplicati)
+      const directText = [...el.childNodes]
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent.trim())
+        .join(' ')
+        .trim();
+
+      if (directText.length > 100 && directText.length < 3000) {
+        candidates.push(directText);
+      }
+    });
+
+    // Metodo 2: prende tutti i testi lunghi da innerText escludendo navigazione
+    const bodyText = document.body.innerText || '';
+    const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 80);
+
+    // Raggruppa righe consecutive in post
+    let currentPost = '';
+    lines.forEach(line => {
+      // Skip righe di navigazione tipiche di LinkedIn
+      if (['Home', 'Rete', 'Lavoro', 'Messaggi', 'Notifiche', 'Cerca', 'Premium', 'Seguaci', 'Collegati', 'Follower'].some(w => line === w)) return;
+      if (line.length < 30 && currentPost.length > 100) {
+        if (!seen.has(currentPost.slice(0, 50))) {
+          seen.add(currentPost.slice(0, 50));
+          posts.push({
+            text: currentPost.trim(),
+            date: '',
+            likes: 0,
+            comments: 0,
+            impressions: 0,
+            type: 'text',
+            url: window.location.href.split('?')[0]
+          });
+        }
+        currentPost = '';
+      } else {
+        currentPost += (currentPost ? ' ' : '') + line;
+      }
+    });
+    // Ultimo post
+    if (currentPost.length > 100 && !seen.has(currentPost.slice(0, 50))) {
+      posts.push({ text: currentPost.trim(), date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href.split('?')[0] });
     }
 
-    // Approccio 2: cerca tutti i div con testo lungo e pulsante like
-    if (cards.length === 0) {
-      cards = [...document.querySelectorAll('div')].filter(el => {
-        const txt = (el.innerText || '').trim();
-        if (txt.length < 100 || txt.length > 5000) return false;
-        const hasLike = el.querySelector('button[aria-label*="eaction"], button[aria-label*="Like"], button[aria-label*="like"], span[data-reaction]');
-        return !!hasLike;
-      });
-    }
-
-    // Approccio 3: fallback totale — prende tutti i blocchi di testo con span[dir=ltr]
-    if (cards.length === 0) {
-      const spans = [...document.querySelectorAll('span[dir="ltr"]')]
-        .filter(s => s.innerText?.trim().length > 80);
-      spans.forEach(span => {
-        const txt = span.innerText.trim();
-        if (!seen.has(txt)) {
-          seen.add(txt);
-          posts.push({ text: txt, date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href });
+    // Se ancora 0, usa metodo brute force
+    if (posts.length === 0) {
+      candidates.slice(0, 20).forEach(text => {
+        if (!seen.has(text.slice(0, 50))) {
+          seen.add(text.slice(0, 50));
+          posts.push({ text, date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href.split('?')[0] });
         }
       });
     }
 
-    cards.forEach(card => {
-      try {
-        const textEl = card.querySelector(
-          '.feed-shared-update-v2__description, ' +
-          '.feed-shared-text, ' +
-          '.update-components-text, ' +
-          '[class*="commentary"], ' +
-          'span[dir="ltr"]'
-        );
-        const text = (textEl?.innerText || card.innerText || '').trim().slice(0, 2000);
-        if (!text || text.length < 50 || seen.has(text)) return;
-        seen.add(text);
-
-        const likesEl = card.querySelector('[aria-label*="reaction"], .social-details-social-counts__reactions-count, [class*="reaction-count"]');
-        const likes = parseInt((likesEl?.innerText || '0').replace(/[^0-9]/g,'')) || 0;
-
-        const commentsEl = card.querySelector('[aria-label*="comment"], .social-details-social-counts__comments, [class*="comment-count"]');
-        const comments = parseInt((commentsEl?.innerText || '0').replace(/[^0-9]/g,'')) || 0;
-
-        let type = 'text';
-        if (card.querySelector('video')) type = 'video';
-        else if (card.querySelector('img[class*="ivm"], [class*="image"]')) type = 'image';
-        else if (card.querySelector('[class*="article"], [class*="external"]')) type = 'link';
-
-        const linkEl = card.querySelector('a[href*="activity"], a[href*="ugcPost"]');
-        const url = linkEl?.href?.split('?')[0] || window.location.href;
-
-        posts.push({ text, date: '', likes, comments, impressions: 0, type, url });
-      } catch(e) {}
-    });
-
-    sendResponse({ posts });
+    sendResponse({ posts: posts.slice(0, 30) });
     return true;
   }
 
+  // ── Leggi post singolo dal feed ───────────────────────────────────────────
   if (msg.action === 'get_post_text') {
-    let text = '';
-    const selectors = [
-      '.feed-shared-update-v2__description .break-words',
-      '.feed-shared-text .break-words',
-      '.update-components-text .break-words',
-      '[class*="commentary"] span[dir="ltr"]',
-      'span[dir="ltr"]',
-    ];
-    for (const sel of selectors) {
-      const els = document.querySelectorAll(sel);
-      if (els.length) {
-        text = [...els].map(e => e.innerText.trim()).join('\n').trim();
-        if (text.length > 20) break;
+    // Prende il testo più lungo visibile nella pagina che sembra un post
+    let bestText = '';
+    const allEls = document.querySelectorAll('p, div[class*="update"], div[class*="feed"], article');
+    allEls.forEach(el => {
+      const txt = el.innerText?.trim() || '';
+      if (txt.length > bestText.length && txt.length < 3000 && txt.length > 50) {
+        bestText = txt;
       }
-    }
-    sendResponse({ text });
+    });
+    sendResponse({ text: bestText });
     return true;
   }
 
+  // ── Info profilo ──────────────────────────────────────────────────────────
   if (msg.action === 'get_profile_info') {
     let followers = 0;
-    document.querySelectorAll('span, button, a').forEach(el => {
-      const t = (el.innerText || '').toLowerCase().trim();
-      if ((t.includes('follower') || t.includes('seguac')) && t.length < 40) {
-        const num = parseInt(t.replace(/[^0-9]/g,''));
-        if (num > 0) followers = Math.max(followers, num);
-      }
-    });
+    const bodyText = document.body.innerText || '';
+    const match = bodyText.match(/(\d[\d.,]*)\s*follower/i);
+    if (match) followers = parseInt(match[1].replace(/[.,]/g, ''));
+
     const nameEl = document.querySelector('h1');
     sendResponse({ name: nameEl?.innerText?.trim() || '', followers, url: window.location.href.split('?')[0] });
     return true;

@@ -173,17 +173,24 @@ document.getElementById('btnGenerate').addEventListener('click', async () => {
 
   const memory = await chromeGet('memory') || [];
   const memSection = memory.length >= 5
-    ? `\n[STILE APPRESO]\n${memory.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
-    : profile?.example ? `\n[SEED]\n"${profile.example}"\n` : '';
+    ? `\n[STILE APPRESO — ${memory.length} commenti reali]\nReplica questo stile:\n${memory.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
+    : profile?.example ? `\n[SEED STILE]\n"${profile.example}"\n` : '';
 
   const prompt = `Sei ${profile?.role || 'un professionista LinkedIn'}.
+Tono: ${profile?.tones?.join(', ') || 'diretto e naturale'}.
 ${memSection}
-Post da commentare:
+
+Post LinkedIn da commentare:
 ---
 ${post}
 ---
-${toneMap[tone]}
-Regole: rispondi al contenuto del post, italiano naturale, zero emoji, zero hashtag, max 55 parole.
+
+Genera ESATTAMENTE 3 commenti, uno per tipo:
+1. type="professional" — Costruttivo, porta valore concreto sul tema del post
+2. type="question" — Domanda genuina e specifica nata dalla lettura del post
+3. type="insight" — Prospettiva aggiuntiva o osservazione che arricchisce la discussione
+
+Regole: rispondi al contenuto specifico del post, italiano naturale, zero emoji, zero hashtag, max 55 parole per commento.
 JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question","text":"..."},{"type":"insight","text":"..."}]}`;
 
   try {
@@ -196,7 +203,12 @@ JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question",
     if (data.error) throw new Error(data.error.message);
     const raw = (data.content || []).map(b => b.text || '').join('');
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    renderComments(parsed.comments);
+    // Assicura esattamente 3 commenti
+    const required = ['professional', 'question', 'insight'];
+    const final = required.map(type =>
+      parsed.comments.find(c => c.type === type) || { type, text: parsed.comments[0]?.text || '—' }
+    );
+    renderComments(final);
   } catch(e) {
     results.innerHTML = `<div style="padding:10px 16px;color:#ff4455;font-size:11px;font-family:monospace">ERR: ${e.message}</div>`;
   }

@@ -35,6 +35,7 @@ function init() {
 
   if (!state.apiKey || !state.profile) {
     showScreen('setup');
+    prefillSetup();
     return;
   }
 
@@ -60,6 +61,7 @@ function navTo(screen, el) {
   if (screen === 'growth') calcGrowth();
   if (screen === 'posts') renderPosts();
   if (screen === 'content') renderSuggestions();
+  if (screen === 'setup') prefillSetup();
 }
 
 function showScreen(name) {
@@ -73,6 +75,23 @@ function initChips() {
   document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('on')));
 }
 function getChips(id) { return [...document.querySelectorAll(`#${id} .chip.on`)].map(c => c.dataset.val); }
+function setChips(id, vals = []) {
+  document.querySelectorAll(`#${id} .chip`).forEach(c => c.classList.toggle('on', vals.includes(c.dataset.val)));
+}
+
+// Pre-compila il form setup con i dati esistenti
+function prefillSetup() {
+  const apiKey  = S.get('apiKey');
+  const profile = S.get('profile');
+  if (apiKey)  document.getElementById('setupApiKey').value = apiKey;
+  if (!profile) return;
+  document.getElementById('setupRole').value      = profile.role || '';
+  document.getElementById('setupFollowers').value = profile.followers || '';
+  document.getElementById('setupTotalPosts').value = profile.totalPosts || '';
+  document.getElementById('setupExample').value   = profile.example || '';
+  setChips('setupGoals', profile.goals || []);
+  setChips('setupTones', profile.tones || []);
+}
 
 document.getElementById('btnSetupSave').addEventListener('click', () => {
   const apiKey = document.getElementById('setupApiKey').value.trim();
@@ -90,7 +109,7 @@ document.getElementById('btnSetupSave').addEventListener('click', () => {
     goals: getChips('setupGoals'),
     tones: getChips('setupTones'),
     example: document.getElementById('setupExample').value.trim(),
-    createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
 
   S.set('apiKey', apiKey);
@@ -479,31 +498,41 @@ document.getElementById('btnCommentGenerate').addEventListener('click', async ()
   const mem = state.memory;
 
   const lengthMap = { short:'max 25 parole', medium:'max 55 parole', long:'max 90 parole' };
-  const toneMap = {
-    mix:      'Genera type="professional" + type="question" + type="insight"',
-    expert:   'Genera 3 varianti type="professional" con angoli diversi',
-    question: 'Genera 3 varianti type="question" con domande diverse',
-    insight:  'Genera 3 varianti type="insight" con prospettive diverse',
-  };
 
+  // Costruisci memoria stile — più commenti = più preciso
   const memSection = mem.length >= 5
-    ? `\n[STILE APPRESO — ${mem.length} esempi]\n${mem.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
+    ? `\n[STILE APPRESO — ${mem.length} commenti reali]\nReplica FEDELMENTE questo stile:\n${mem.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
     : p?.example ? `\n[SEED STILE]\n"${p.example}"\n` : '';
 
   const prompt = `Sei ${p?.role || 'un professionista LinkedIn'}.
-Tono: ${p?.tones?.join(', ') || 'naturale'}.
+Tono di voce: ${p?.tones?.join(', ') || 'diretto e naturale'}.
 ${memSection}
 
-Post da commentare:
+Post LinkedIn da commentare:
 ---
 ${post}
 ---
 
-ANALISI: Leggi attentamente il post. Rispondi al contenuto specifico, non al tuo settore.
-${toneMap[tone]}
+ISTRUZIONE CRITICA: Genera ESATTAMENTE 3 commenti. Non uno di più, non uno di meno.
+Ogni commento deve essere di un tipo DIVERSO:
 
-Regole: ${lengthMap[length]} per commento, italiano naturale, zero emoji, zero hashtag.
-JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question","text":"..."},{"type":"insight","text":"..."}]}`;
+1. type="professional" — Commento costruttivo da professionista esperto. Porta un punto di vista concreto, un'esperienza reale o un'osservazione di valore sul tema del post. NON generico.
+
+2. type="question" — Una domanda genuina e intelligente che nasce dalla lettura del post. Deve sembrare scritta da qualcuno che ha letto davvero e vuole approfondire un aspetto specifico.
+
+3. type="insight" — Un insight o prospettiva aggiuntiva che arricchisce la discussione. Può essere un dato, un'osservazione controcorrente, un collegamento con altro.
+
+Regole TASSATIVE:
+- Rispondi al CONTENUTO SPECIFICO del post — non al tuo settore
+- Lunghezza: ${lengthMap[length]} per commento
+- Italiano naturale, mai da copywriter
+- Zero emoji, zero hashtag
+- Ogni commento deve sembrare scritto da una persona reale che ha letto il post
+- Commenti costruttivi: aggiungono valore alla conversazione
+${mem.length >= 10 ? `- Hai ${mem.length} esempi reali del tuo stile: replicane ritmo e parole tipiche` : ''}
+
+Rispondi SOLO con JSON valido, esattamente così:
+{"comments":[{"type":"professional","text":"..."},{"type":"question","text":"..."},{"type":"insight","text":"..."}]}`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -517,7 +546,14 @@ JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question",
     const parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
 
     spinner.classList.remove('on');
-    renderCommentCards(parsed.comments);
+
+    // Assicura esattamente 3 commenti con i tipi giusti
+    const required = ['professional', 'question', 'insight'];
+    const finalComments = required.map(type => {
+      return parsed.comments.find(c => c.type === type) ||
+             { type, text: parsed.comments[0]?.text || '—' };
+    });
+    renderCommentCards(finalComments);
   } catch(e) {
     spinner.classList.remove('on');
     results.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:16px;font-family:monospace">ERR: ${e.message}</div>`;
