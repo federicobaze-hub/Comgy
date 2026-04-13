@@ -7,18 +7,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const posts = [];
     const seen = new Set();
 
-    // Parole da escludere — navigazione, bio, elementi UI LinkedIn
-    const SKIP_WORDS = ['home', 'rete', 'lavoro', 'messaggi', 'notifiche', 'cerca', 'premium',
-      'seguaci', 'collegati', 'follower', 'connessioni', 'visualizza profilo', 'impostazioni',
-      'area manager', 'cybersecurity', 'connettività', 'consorzio storm', 'consulente',
-      'mi piace', 'commenta', 'condividi', 'diffondi', 'invia', 'vedi altro', 'mostra meno',
-      'linkedin corporation', 'informativa', 'accessibilità'];
+    // Pattern da escludere — bio, navigazione, UI LinkedIn
+    const SKIP_PATTERNS = [
+      /^home$/i, /^rete$/i, /^lavoro$/i, /^messaggi$/i, /^notifiche$/i,
+      /^cerca$/i, /^premium$/i, /^seguaci/i, /^follower/i, /^connessioni/i,
+      /^visualizza profilo/i, /^impostazioni/i, /^linkedin corporation/i,
+      /^mi piace/i, /^commenta/i, /^condividi/i, /^invia/i, /^vedi altro/i,
+      /^ottieni/i, /^scarica l'app/i, /^centro assistenza/i,
+      // Bio LinkedIn tipica: "Ruolo | Azienda | Descrizione"
+      /^[A-Z][^.!?]{0,60}\|[^.!?]{0,60}\|/,
+      /manager.*\|.*cybersecurity/i,
+      /consulente.*cybersecurity/i,
+    ];
 
     function shouldSkip(text) {
+      if (text.length < 80 || text.length > 4000) return true;
       const lower = text.toLowerCase();
-      return SKIP_WORDS.some(w => lower.startsWith(w)) ||
-             text.length < 80 ||
-             text.split('\n').length < 2; // i post veri hanno più righe
+      return SKIP_PATTERNS.some(p => p.test(text)) ||
+             // Salta testi senza punteggiatura (tipici di bio/nav)
+             (text.split(/[.!?,]/).length < 2 && text.length < 200);
     }
 
     // Leggi il body e cerca blocchi di testo che sembrano post

@@ -83,9 +83,8 @@ document.getElementById('btnSync').addEventListener('click', async () => {
     }
 
     if (response?.posts?.length) {
-      const existing = await chromeGet('syncedPosts') || [];
-      const merged = mergePosts(existing, response.posts);
-      await chromeSet({ syncedPosts: merged, lastSync: Date.now() });
+      // Svuota i post vecchi e salva solo quelli nuovi
+      await chromeSet({ syncedPosts: response.posts, lastSync: Date.now() });
 
       // Leggi follower
       try {
@@ -93,16 +92,16 @@ document.getElementById('btnSync').addEventListener('click', async () => {
         if (profileInfo?.followers > 0) await chromeSet({ syncedFollowers: profileInfo.followers });
       } catch(e) {}
 
-      // Passa i dati alla dashboard aprendo una tab con i dati encodati
+      // Passa i dati alla dashboard
       const payload = encodeURIComponent(JSON.stringify({
-        posts: merged,
+        posts: response.posts,
         lastSync: Date.now(),
       }));
       chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
 
       syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
       syncResult.classList.add('visible');
-      setStatus('on', `${merged.length} post in archivio`);
+      setStatus('on', `${response.posts.length} post in archivio`);
     } else {
       syncResult.textContent = 'Nessun post trovato — scorri il profilo e riprova';
       syncResult.classList.add('visible');
@@ -257,6 +256,11 @@ results.addEventListener('click', async (e) => {
 // ── Dashboard link ────────────────────────────────────────────────────────────
 document.getElementById('btnOpenDashboard').addEventListener('click', () => {
   chrome.tabs.create({ url: DASHBOARD_URL });
+});
+
+document.getElementById('btnSettings').addEventListener('click', () => {
+  chrome.tabs.create({ url: `${DASHBOARD_URL}` });
+  // Apre la dashboard — poi clicca Setup in alto a destra
 });
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
