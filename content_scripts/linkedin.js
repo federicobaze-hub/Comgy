@@ -7,64 +7,42 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const posts = [];
     const seen = new Set();
 
-    // Metodo 1: cerca elementi con testo lungo (post tipici 100-3000 chars)
-    const allEls = document.querySelectorAll('p, div, span, article');
-    const candidates = [];
+    // Parole da escludere — navigazione, bio, elementi UI LinkedIn
+    const SKIP_WORDS = ['home', 'rete', 'lavoro', 'messaggi', 'notifiche', 'cerca', 'premium',
+      'seguaci', 'collegati', 'follower', 'connessioni', 'visualizza profilo', 'impostazioni',
+      'area manager', 'cybersecurity', 'connettività', 'consorzio storm', 'consulente',
+      'mi piace', 'commenta', 'condividi', 'diffondi', 'invia', 'vedi altro', 'mostra meno',
+      'linkedin corporation', 'informativa', 'accessibilità'];
 
-    allEls.forEach(el => {
-      // Solo elementi diretti senza figli con testo (evita duplicati)
-      const directText = [...el.childNodes]
-        .filter(n => n.nodeType === 3)
-        .map(n => n.textContent.trim())
-        .join(' ')
-        .trim();
+    function shouldSkip(text) {
+      const lower = text.toLowerCase();
+      return SKIP_WORDS.some(w => lower.startsWith(w)) ||
+             text.length < 80 ||
+             text.split('\n').length < 2; // i post veri hanno più righe
+    }
 
-      if (directText.length > 100 && directText.length < 3000) {
-        candidates.push(directText);
-      }
-    });
-
-    // Metodo 2: prende tutti i testi lunghi da innerText escludendo navigazione
+    // Leggi il body e cerca blocchi di testo che sembrano post
     const bodyText = document.body.innerText || '';
-    const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 80);
+    const blocks = bodyText.split(/\n{2,}/); // divide per doppio a capo
 
-    // Raggruppa righe consecutive in post
-    let currentPost = '';
-    lines.forEach(line => {
-      // Skip righe di navigazione tipiche di LinkedIn
-      if (['Home', 'Rete', 'Lavoro', 'Messaggi', 'Notifiche', 'Cerca', 'Premium', 'Seguaci', 'Collegati', 'Follower'].some(w => line === w)) return;
-      if (line.length < 30 && currentPost.length > 100) {
-        if (!seen.has(currentPost.slice(0, 50))) {
-          seen.add(currentPost.slice(0, 50));
-          posts.push({
-            text: currentPost.trim(),
-            date: '',
-            likes: 0,
-            comments: 0,
-            impressions: 0,
-            type: 'text',
-            url: window.location.href.split('?')[0]
-          });
-        }
-        currentPost = '';
-      } else {
-        currentPost += (currentPost ? ' ' : '') + line;
-      }
-    });
-    // Ultimo post
-    if (currentPost.length > 100 && !seen.has(currentPost.slice(0, 50))) {
-      posts.push({ text: currentPost.trim(), date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href.split('?')[0] });
-    }
+    blocks.forEach(block => {
+      const text = block.trim();
+      if (text.length < 80 || text.length > 4000) return;
+      if (shouldSkip(text)) return;
+      const key = text.slice(0, 60);
+      if (seen.has(key)) return;
+      seen.add(key);
 
-    // Se ancora 0, usa metodo brute force
-    if (posts.length === 0) {
-      candidates.slice(0, 20).forEach(text => {
-        if (!seen.has(text.slice(0, 50))) {
-          seen.add(text.slice(0, 50));
-          posts.push({ text, date: '', likes: 0, comments: 0, impressions: 0, type: 'text', url: window.location.href.split('?')[0] });
-        }
+      posts.push({
+        text,
+        date: '',
+        likes: 0,
+        comments: 0,
+        impressions: 0,
+        type: 'text',
+        url: window.location.href.split('?')[0]
       });
-    }
+    });
 
     sendResponse({ posts: posts.slice(0, 30) });
     return true;
@@ -72,16 +50,52 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   // ── Leggi post singolo dal feed ───────────────────────────────────────────
   if (msg.action === 'get_post_text') {
-    // Prende il testo più lungo visibile nella pagina che sembra un post
-    let bestText = '';
-    const allEls = document.querySelectorAll('p, div[class*="update"], div[class*="feed"], article');
-    allEls.forEach(el => {
-      const txt = el.innerText?.trim() || '';
-      if (txt.length > bestText.length && txt.length < 3000 && txt.length > 50) {
-        bestText = txt;
+    // Trova il post più centrato nel viewport
+    const viewportCenter = window.innerHeight / 2;
+    let bestEl = null;
+    let bestScore = Infinity;
+
+    const candidates = document.querySelectorAll(
+      '.feed-shared-update-v2, ' +
+      'div[data-urn*="activity"], ' +
+      'div[class*="occludable-update"], ' +
+      'article, ' +
+      '.scaffold-finite-scroll__content > div > div'
+    );
+
+    candidates.forEach(el => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const elCenter = rect.top + rect.height / 2;
+      const dist = Math.abs(elCenter - viewportCenter);
+      if (dist < bestScore) {
+        bestScore = dist;
+        bestEl = el;
       }
     });
-    sendResponse({ text: bestText });
+
+    let text = bestEl?.innerText?.trim() || '';
+
+    // Fallback: prende tutti i paragrafi visibili e trova il blocco più centrato
+    if (!text || text.length < 30) {
+      const allP = [...document.querySelectorAll('p, span[dir="ltr"]')];
+      let bestP = null;
+      let bestDist = Infinity;
+      allP.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top < 0 || rect.bottom > window.innerHeight) return;
+        if (rect.width === 0) return;
+        const dist = Math.abs((rect.top + rect.height / 2) - viewportCenter);
+        const txt = el.innerText?.trim() || '';
+        if (txt.length > 50 && dist < bestDist) {
+          bestDist = dist;
+          bestP = txt;
+        }
+      });
+      text = bestP || '';
+    }
+
+    sendResponse({ text });
     return true;
   }
 
