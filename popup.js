@@ -108,7 +108,7 @@ document.getElementById('btnGetCaptured').addEventListener('click', async () => 
       syncResult.textContent = 'Errore comunicazione — ricarica la pagina LinkedIn e riprova';
       syncResult.classList.add('visible');
       setLoading(false);
-      document.getElementById('btnSync').disabled = false;
+      document.getElementById('btnGetCaptured').disabled = false;
       return;
     }
 
@@ -145,7 +145,7 @@ document.getElementById('btnGetCaptured').addEventListener('click', async () => 
   }
 
   setLoading(false);
-  document.getElementById('btnSync').disabled = false;
+  document.getElementById('btnGetCaptured').disabled = false;
 });
 
 function mergePosts(existing, newPosts) {
