@@ -2,161 +2,119 @@
 
 const DASHBOARD_URL = 'https://comgy.vercel.app';
 
-// DOM
+// DOM refs
 const statusDot  = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const spinner    = document.getElementById('spinner');
 const pageBadge  = document.getElementById('pageBadge');
 const sectionSync    = document.getElementById('sectionSync');
 const sectionComment = document.getElementById('sectionComment');
+const sectionApiSetup = document.getElementById('sectionApiSetup');
 const syncResult = document.getElementById('syncResult');
 const results    = document.getElementById('results');
 
-// ── Check API key on init ─────────────────────────────────────────────────────
-async function checkApiKey() {
-  const { apiKey } = await chromeGet(['apiKey']);
-  if (!apiKey) {
-    document.getElementById('sectionApiSetup').style.display = 'block';
-  }
+// ── Storage helpers ───────────────────────────────────────────────────────────
+function chromeGet(keys) {
+  return new Promise(r => chrome.storage.local.get(keys, r)).then(res =>
+    typeof keys === 'string' ? res[keys] : res
+  );
 }
-
-document.getElementById('btnSaveApiKey').addEventListener('click', async () => {
-  const key = document.getElementById('apiKeySetup').value.trim();
-  if (!key || key.length < 20) { alert('Chiave non valida.'); return; }
-  await chromeSet({ apiKey: key });
-  document.getElementById('sectionApiSetup').style.display = 'none';
-});
+function chromeSet(obj) { return new Promise(r => chrome.storage.local.set(obj, r)); }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const url = tab?.url || '';
 
-  if (url.includes('linkedin.com/in/') && isOwnProfile(url)) {
+  if (url.includes('linkedin.com/in/')) {
     setStatus('on', 'Profilo rilevato');
     pageBadge.textContent = 'PROFILO';
     sectionSync.style.display = 'block';
-  } else if (url.includes('linkedin.com/feed') || url.includes('linkedin.com/posts') || url.includes('linkedin.com/in/')) {
+  } else if (url.includes('linkedin.com')) {
     setStatus('on', 'LinkedIn rilevato');
     pageBadge.textContent = 'FEED';
-    sectionComment.style.display = 'block';
-  } else if (url.includes('linkedin.com')) {
-    setStatus('on', 'LinkedIn');
-    pageBadge.textContent = 'LINKEDIN';
-    sectionSync.style.display = 'block';
     sectionComment.style.display = 'block';
   } else {
     setStatus('', 'Vai su LinkedIn per usare Comgy');
     pageBadge.textContent = '—';
   }
-}
 
-function isOwnProfile(url) {
-  // Consideriamo profilo qualsiasi /in/ page per ora
-  return url.includes('/in/');
+  // Mostra setup API key solo se non ancora salvata
+  const { apiKey } = await chromeGet(['apiKey']);
+  if (!apiKey && sectionApiSetup) {
+    sectionApiSetup.style.display = 'block';
+  }
 }
 
 function setStatus(type, text) {
   statusDot.className = 'dot' + (type === 'on' ? ' on' : type === 'err' ? ' err' : '');
   statusText.textContent = text;
 }
+function setLoading(on) { spinner.classList.toggle('on', on); }
 
-function setLoading(on) {
-  spinner.classList.toggle('on', on);
-}
-
-// ── Sync profilo ──────────────────────────────────────────────────────────────
-document.getElementById('btnStartCapture').addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
-    await new Promise(r => setTimeout(r, 300));
-    await chrome.tabs.sendMessage(tab.id, { action: 'start_capture' });
-    document.getElementById('btnStartCapture').style.display = 'none';
-    document.getElementById('btnGetCaptured').style.display = 'block';
-    syncResult.textContent = 'Clicca sui tuoi post in LinkedIn → poi torna qui';
-    syncResult.classList.add('visible');
-  } catch(e) {
-    syncResult.textContent = 'Errore: ricarica LinkedIn e riprova';
-    syncResult.classList.add('visible');
-  }
+// ── API Key setup (una volta sola) ────────────────────────────────────────────
+document.getElementById('btnSaveApiKey')?.addEventListener('click', async () => {
+  const key = document.getElementById('apiKeySetup').value.trim();
+  if (!key || key.length < 20) { alert('Chiave non valida.'); return; }
+  await chromeSet({ apiKey: key });
+  sectionApiSetup.style.display = 'none';
 });
 
-document.getElementById('btnGetCaptured').addEventListener('click', async () => {
+// ── Sync profilo ──────────────────────────────────────────────────────────────
+document.getElementById('btnSync').addEventListener('click', async () => {
   setLoading(true);
+  document.getElementById('btnSync').disabled = true;
   syncResult.classList.remove('visible');
-  setStatus('on', 'Lettura post in corso (3 sec)...');
+  setStatus('on', 'Lettura post in corso...');
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    // Inietta sempre lo script prima di mandare il messaggio
+
+    // Inietta content script
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content_scripts/linkedin.js']
-      });
-    } catch(e) { /* già iniettato, ok */ }
-    
-    // Aspetta che LinkedIn carichi i post dinamicamente
-    await new Promise(r => setTimeout(r, 500));
-    
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
+    } catch(e) {}
+
+    await new Promise(r => setTimeout(r, 1500));
+
     let response;
     try {
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'get_captured' });
+      response = await chrome.tabs.sendMessage(tab.id, { action: 'sync_profile' });
     } catch(e) {
-      syncResult.textContent = 'Errore comunicazione — ricarica la pagina LinkedIn e riprova';
+      syncResult.textContent = 'Errore: ricarica LinkedIn e riprova';
       syncResult.classList.add('visible');
       setLoading(false);
-      document.getElementById('btnGetCaptured').disabled = false;
+      document.getElementById('btnSync').disabled = false;
       return;
     }
 
     if (response?.posts?.length) {
-      // Svuota i post vecchi e salva solo quelli nuovi
       await chromeSet({ syncedPosts: response.posts, lastSync: Date.now() });
 
-      // Leggi follower
       try {
-        const profileInfo = await chrome.tabs.sendMessage(tab.id, { action: 'get_profile_info' });
-        if (profileInfo?.followers > 0) await chromeSet({ syncedFollowers: profileInfo.followers });
+        const info = await chrome.tabs.sendMessage(tab.id, { action: 'get_profile_info' });
+        if (info?.followers > 0) await chromeSet({ syncedFollowers: info.followers });
       } catch(e) {}
 
-      // Passa i dati alla dashboard
-      const payload = encodeURIComponent(JSON.stringify({
-        posts: response.posts,
-        lastSync: Date.now(),
-      }));
+      const payload = encodeURIComponent(JSON.stringify({ posts: response.posts, lastSync: Date.now() }));
       chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
 
-      syncResult.textContent = `✓ ${response.posts.length} post inviati alla dashboard`;
+      syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
       syncResult.classList.add('visible');
       setStatus('on', `${response.posts.length} post in archivio`);
-      document.getElementById('btnStartCapture').style.display = 'block';
-      document.getElementById('btnGetCaptured').style.display = 'none';
     } else {
       syncResult.textContent = 'Nessun post trovato — scorri il profilo e riprova';
       syncResult.classList.add('visible');
     }
   } catch(e) {
-    syncResult.textContent = 'Errore sync: ' + e.message;
+    syncResult.textContent = 'Errore: ' + e.message;
     syncResult.classList.add('visible');
-    setStatus('err', 'Errore sincronizzazione');
+    setStatus('err', 'Errore');
   }
 
   setLoading(false);
-  document.getElementById('btnGetCaptured').disabled = false;
+  document.getElementById('btnSync').disabled = false;
 });
-
-function mergePosts(existing, newPosts) {
-  const merged = [...existing];
-  newPosts.forEach(p => {
-    if (!merged.find(e => e.text === p.text || (e.url && e.url === p.url))) {
-      merged.push({ ...p, syncedAt: Date.now() });
-    }
-  });
-  return merged.slice(0, 100); // max 100 post
-}
 
 // ── Grab post dal feed ────────────────────────────────────────────────────────
 document.getElementById('btnGrabPost').addEventListener('click', async () => {
@@ -165,14 +123,11 @@ document.getElementById('btnGrabPost').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let response;
     try {
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'get_post_text' });
-    } catch {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
-      await new Promise(r => setTimeout(r, 400));
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'get_post_text' });
-    }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 400));
+    const response = await chrome.tabs.sendMessage(tab.id, { action: 'get_post_text' });
     if (response?.text) document.getElementById('postInput').value = response.text;
     else document.getElementById('postInput').placeholder = 'Nessun testo — incolla manualmente';
   } catch { document.getElementById('postInput').placeholder = 'Errore — incolla manualmente'; }
@@ -186,25 +141,19 @@ document.getElementById('btnGenerate').addEventListener('click', async () => {
   if (!post) { alert('Incolla un post prima.'); return; }
 
   const { apiKey, profile } = await chromeGet(['apiKey', 'profile']);
-  if (!apiKey) { alert('Configura la API key nella dashboard.'); return; }
+  if (!apiKey) {
+    if (sectionApiSetup) sectionApiSetup.style.display = 'block';
+    return;
+  }
 
-  const tone = document.getElementById('toneSelect').value;
-  const btn  = document.getElementById('btnGenerate');
-
+  const btn = document.getElementById('btnGenerate');
   btn.disabled = true;
   btn.textContent = 'GENERANDO...';
   results.innerHTML = '';
 
-  const toneMap = {
-    mix:      'Genera type="professional" + type="question" + type="insight"',
-    expert:   'Genera 3 varianti type="professional"',
-    question: 'Genera 3 varianti type="question"',
-    insight:  'Genera 3 varianti type="insight"',
-  };
-
   const memory = await chromeGet('memory') || [];
   const memSection = memory.length >= 5
-    ? `\n[STILE APPRESO — ${memory.length} commenti reali]\nReplica questo stile:\n${memory.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
+    ? `\n[STILE APPRESO — ${memory.length} esempi]\n${memory.slice(0,8).map((m,i) => `${i+1}. "${m.text}"`).join('\n')}\n`
     : profile?.example ? `\n[SEED STILE]\n"${profile.example}"\n` : '';
 
   const prompt = `Sei ${profile?.role || 'un professionista LinkedIn'}.
@@ -219,7 +168,7 @@ ${post}
 Genera ESATTAMENTE 3 commenti, uno per tipo:
 1. type="professional" — Costruttivo, porta valore concreto sul tema del post
 2. type="question" — Domanda genuina e specifica nata dalla lettura del post
-3. type="insight" — Prospettiva aggiuntiva o osservazione che arricchisce la discussione
+3. type="insight" — Prospettiva aggiuntiva che arricchisce la discussione
 
 Regole: rispondi al contenuto specifico del post, italiano naturale, zero emoji, zero hashtag, max 55 parole per commento.
 JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question","text":"..."},{"type":"insight","text":"..."}]}`;
@@ -234,11 +183,8 @@ JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question",
     if (data.error) throw new Error(data.error.message);
     const raw = (data.content || []).map(b => b.text || '').join('');
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    // Assicura esattamente 3 commenti
     const required = ['professional', 'question', 'insight'];
-    const final = required.map(type =>
-      parsed.comments.find(c => c.type === type) || { type, text: parsed.comments[0]?.text || '—' }
-    );
+    const final = required.map(type => parsed.comments.find(c => c.type === type) || { type, text: parsed.comments[0]?.text || '—' });
     renderComments(final);
   } catch(e) {
     results.innerHTML = `<div style="padding:10px 16px;color:#ff4455;font-size:11px;font-family:monospace">ERR: ${e.message}</div>`;
@@ -248,7 +194,7 @@ JSON only: {"comments":[{"type":"professional","text":"..."},{"type":"question",
   btn.textContent = 'GENERA';
 });
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Render commenti ───────────────────────────────────────────────────────────
 function renderComments(comments) {
   results.innerHTML = '';
   const meta = {
@@ -276,7 +222,7 @@ results.addEventListener('click', async (e) => {
   if (!btn) return;
   const text = btn.closest('.card').dataset.text;
   await navigator.clipboard.writeText(text);
-  const mem = await chromeGet('memory') || [];
+  const mem = (await chromeGet('memory')) || [];
   if (!mem.find(m => m.text === text)) {
     mem.unshift({ text, ts: Date.now() });
     await chromeSet({ memory: mem.slice(0, 30) });
@@ -285,24 +231,14 @@ results.addEventListener('click', async (e) => {
   setTimeout(() => btn.textContent = 'COPIA', 1600);
 });
 
-// ── Dashboard link ────────────────────────────────────────────────────────────
+// ── Bottoni footer ────────────────────────────────────────────────────────────
 document.getElementById('btnOpenDashboard').addEventListener('click', () => {
   chrome.tabs.create({ url: DASHBOARD_URL });
 });
 
 document.getElementById('btnSettings').addEventListener('click', () => {
-  chrome.tabs.create({ url: `${DASHBOARD_URL}` });
-  // Apre la dashboard — poi clicca Setup in alto a destra
+  chrome.tabs.create({ url: DASHBOARD_URL });
 });
-
-// ── Storage helpers ───────────────────────────────────────────────────────────
-function chromeGet(keys) {
-  return new Promise(r => chrome.storage.local.get(keys, r)).then(res =>
-    typeof keys === 'string' ? res[keys] : res
-  );
-}
-function chromeSet(obj) { return new Promise(r => chrome.storage.local.set(obj, r)); }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
-checkApiKey();
