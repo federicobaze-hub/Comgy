@@ -12,6 +12,21 @@ const sectionComment = document.getElementById('sectionComment');
 const syncResult = document.getElementById('syncResult');
 const results    = document.getElementById('results');
 
+// ── Check API key on init ─────────────────────────────────────────────────────
+async function checkApiKey() {
+  const { apiKey } = await chromeGet(['apiKey']);
+  if (!apiKey) {
+    document.getElementById('sectionApiSetup').style.display = 'block';
+  }
+}
+
+document.getElementById('btnSaveApiKey').addEventListener('click', async () => {
+  const key = document.getElementById('apiKeySetup').value.trim();
+  if (!key || key.length < 20) { alert('Chiave non valida.'); return; }
+  await chromeSet({ apiKey: key });
+  document.getElementById('sectionApiSetup').style.display = 'none';
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -51,9 +66,24 @@ function setLoading(on) {
 }
 
 // ── Sync profilo ──────────────────────────────────────────────────────────────
-document.getElementById('btnSync').addEventListener('click', async () => {
+document.getElementById('btnStartCapture').addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
+    await new Promise(r => setTimeout(r, 300));
+    await chrome.tabs.sendMessage(tab.id, { action: 'start_capture' });
+    document.getElementById('btnStartCapture').style.display = 'none';
+    document.getElementById('btnGetCaptured').style.display = 'block';
+    syncResult.textContent = 'Clicca sui tuoi post in LinkedIn → poi torna qui';
+    syncResult.classList.add('visible');
+  } catch(e) {
+    syncResult.textContent = 'Errore: ricarica LinkedIn e riprova';
+    syncResult.classList.add('visible');
+  }
+});
+
+document.getElementById('btnGetCaptured').addEventListener('click', async () => {
   setLoading(true);
-  document.getElementById('btnSync').disabled = true;
   syncResult.classList.remove('visible');
   setStatus('on', 'Lettura post in corso (3 sec)...');
 
@@ -69,11 +99,11 @@ document.getElementById('btnSync').addEventListener('click', async () => {
     } catch(e) { /* già iniettato, ok */ }
     
     // Aspetta che LinkedIn carichi i post dinamicamente
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 500));
     
     let response;
     try {
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'sync_profile' });
+      response = await chrome.tabs.sendMessage(tab.id, { action: 'get_captured' });
     } catch(e) {
       syncResult.textContent = 'Errore comunicazione — ricarica la pagina LinkedIn e riprova';
       syncResult.classList.add('visible');
@@ -99,9 +129,11 @@ document.getElementById('btnSync').addEventListener('click', async () => {
       }));
       chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
 
-      syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
+      syncResult.textContent = `✓ ${response.posts.length} post inviati alla dashboard`;
       syncResult.classList.add('visible');
       setStatus('on', `${response.posts.length} post in archivio`);
+      document.getElementById('btnStartCapture').style.display = 'block';
+      document.getElementById('btnGetCaptured').style.display = 'none';
     } else {
       syncResult.textContent = 'Nessun post trovato — scorri il profilo e riprova';
       syncResult.classList.add('visible');
@@ -273,3 +305,4 @@ function chromeSet(obj) { return new Promise(r => chrome.storage.local.set(obj, 
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
+checkApiKey();
