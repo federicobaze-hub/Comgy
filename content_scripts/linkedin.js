@@ -1,42 +1,38 @@
-// ── Comgy — linkedin.js v4 ────────────────────────────────────────────────────
+// ── Comgy — linkedin.js v5 ────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
-  // ── Sync: legge tutto il testo visibile e cerca post ─────────────────────
+  // ── Sync post dal profilo ─────────────────────────────────────────────────
   if (msg.action === 'sync_profile') {
     const posts = [];
     const seen = new Set();
 
-    // Pattern da escludere — bio, navigazione, UI LinkedIn
-    const SKIP_PATTERNS = [
-      /^home$/i, /^rete$/i, /^lavoro$/i, /^messaggi$/i, /^notifiche$/i,
-      /^cerca$/i, /^premium$/i, /^seguaci/i, /^follower/i, /^connessioni/i,
-      /^visualizza profilo/i, /^impostazioni/i, /^linkedin corporation/i,
-      /^mi piace/i, /^commenta/i, /^condividi/i, /^invia/i, /^vedi altro/i,
-      /^ottieni/i, /^scarica l'app/i, /^centro assistenza/i,
-      // Bio LinkedIn tipica: "Ruolo | Azienda | Descrizione"
-      /^[A-Z][^.!?]{0,60}\|[^.!?]{0,60}\|/,
-      /manager.*\|.*cybersecurity/i,
-      /consulente.*cybersecurity/i,
-    ];
+    // Lista parole singole da saltare (righe di navigazione)
+    const NAV = new Set(['home','rete','lavoro','messaggi','notifiche','cerca',
+      'premium','seguaci','follower','connessioni','impostazioni','altro',
+      'accessibilità','pubblicità','consigliato','mi piace','commenta',
+      'condividi','invia','diffondi','seguire','collegati']);
 
-    function shouldSkip(text) {
-      if (text.length < 80 || text.length > 4000) return true;
-      const lower = text.toLowerCase();
-      return SKIP_PATTERNS.some(p => p.test(text)) ||
-             // Salta testi senza punteggiatura (tipici di bio/nav)
-             (text.split(/[.!?,]/).length < 2 && text.length < 200);
-    }
+    const body = document.body.innerText || '';
 
-    // Leggi il body e cerca blocchi di testo che sembrano post
-    const bodyText = document.body.innerText || '';
-    const blocks = bodyText.split(/\n{2,}/); // divide per doppio a capo
+    // Divide per doppio a capo — ogni blocco è un potenziale post
+    const blocks = body.split(/\n{2,}/);
 
-    blocks.forEach(block => {
-      const text = block.trim();
-      if (text.length < 80 || text.length > 4000) return;
-      if (shouldSkip(text)) return;
-      const key = text.slice(0, 60);
+    blocks.forEach(raw => {
+      const text = raw.trim();
+      if (text.length < 120 || text.length > 5000) return;
+
+      // Salta se è solo navigazione (tutte le righe sono parole nav)
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const navLines = lines.filter(l => NAV.has(l.toLowerCase()) || l.length < 4);
+      if (navLines.length > lines.length * 0.5) return;
+
+      // Salta se contiene pipe (tipico delle bio LinkedIn: "Ruolo | Azienda")
+      const firstLine = lines[0] || '';
+      if ((firstLine.match(/\|/g) || []).length >= 2) return;
+
+      // Dedup
+      const key = text.slice(0, 80);
       if (seen.has(key)) return;
       seen.add(key);
 
@@ -51,68 +47,64 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       });
     });
 
-    sendResponse({ posts: posts.slice(0, 30) });
+    sendResponse({ posts: posts.slice(0, 20) });
     return true;
   }
 
-  // ── Leggi post singolo dal feed ───────────────────────────────────────────
+  // ── Leggi post più vicino al centro del viewport ───────────────────────────
   if (msg.action === 'get_post_text') {
-    // Trova il post più centrato nel viewport
-    const viewportCenter = window.innerHeight / 2;
-    let bestEl = null;
-    let bestScore = Infinity;
+    const center = window.innerHeight / 2;
+    let bestText = '';
+    let bestDist = Infinity;
 
-    const candidates = document.querySelectorAll(
-      '.feed-shared-update-v2, ' +
-      'div[data-urn*="activity"], ' +
-      'div[class*="occludable-update"], ' +
-      'article, ' +
-      '.scaffold-finite-scroll__content > div > div'
-    );
+    // Prova prima selettori specifici LinkedIn
+    const selectors = [
+      '.feed-shared-update-v2',
+      'div[data-urn*="activity"]',
+      'div[class*="occludable-update"]',
+      'article',
+    ];
 
-    candidates.forEach(el => {
+    let cards = [];
+    for (const sel of selectors) {
+      cards = [...document.querySelectorAll(sel)];
+      if (cards.length > 0) break;
+    }
+
+    cards.forEach(el => {
       const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      const elCenter = rect.top + rect.height / 2;
-      const dist = Math.abs(elCenter - viewportCenter);
-      if (dist < bestScore) {
-        bestScore = dist;
-        bestEl = el;
+      if (rect.width === 0 || rect.height < 10) return;
+      const dist = Math.abs((rect.top + rect.height / 2) - center);
+      const txt = el.innerText?.trim() || '';
+      if (txt.length > 50 && dist < bestDist) {
+        bestDist = dist;
+        bestText = txt;
       }
     });
 
-    let text = bestEl?.innerText?.trim() || '';
-
-    // Fallback: prende tutti i paragrafi visibili e trova il blocco più centrato
-    if (!text || text.length < 30) {
-      const allP = [...document.querySelectorAll('p, span[dir="ltr"]')];
-      let bestP = null;
-      let bestDist = Infinity;
-      allP.forEach(el => {
+    // Fallback: paragrafi visibili nel viewport
+    if (!bestText) {
+      document.querySelectorAll('p').forEach(el => {
         const rect = el.getBoundingClientRect();
         if (rect.top < 0 || rect.bottom > window.innerHeight) return;
-        if (rect.width === 0) return;
-        const dist = Math.abs((rect.top + rect.height / 2) - viewportCenter);
         const txt = el.innerText?.trim() || '';
+        const dist = Math.abs((rect.top + rect.height / 2) - center);
         if (txt.length > 50 && dist < bestDist) {
           bestDist = dist;
-          bestP = txt;
+          bestText = txt;
         }
       });
-      text = bestP || '';
     }
 
-    sendResponse({ text });
+    sendResponse({ text: bestText });
     return true;
   }
 
   // ── Info profilo ──────────────────────────────────────────────────────────
   if (msg.action === 'get_profile_info') {
-    let followers = 0;
     const bodyText = document.body.innerText || '';
-    const match = bodyText.match(/(\d[\d.,]*)\s*follower/i);
-    if (match) followers = parseInt(match[1].replace(/[.,]/g, ''));
-
+    const match = bodyText.match(/(\d[\d.,]*)\s*(follower|seguac)/i);
+    const followers = match ? parseInt(match[1].replace(/[.,]/g, '')) : 0;
     const nameEl = document.querySelector('h1');
     sendResponse({ name: nameEl?.innerText?.trim() || '', followers, url: window.location.href.split('?')[0] });
     return true;
