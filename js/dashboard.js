@@ -607,6 +607,18 @@ document.getElementById('commentResults').addEventListener('click', async (e) =>
   setTimeout(() => { btn.textContent = 'COPIA'; btn.classList.remove('copied'); }, 1600);
 });
 
+function clearPosts() {
+  if (!confirm('Cancelli tutti i post salvati. Sicuro?')) return;
+  S.del('syncedPosts');
+  S.del('lastSync');
+  S.del('suggestionCache');
+  state.posts = [];
+  renderPosts();
+  renderMetrics();
+  renderScore();
+  updateSyncStatus();
+}
+
 // ── Listen for extension sync ─────────────────────────────────────────────────
 // La dashboard controlla localStorage ogni 5 secondi per nuovi post dall'estensione
 setInterval(() => {
@@ -631,15 +643,14 @@ function checkUrlSync() {
   try {
     const data = JSON.parse(decodeURIComponent(syncParam));
     if (data.posts?.length) {
-      const existing = S.get('syncedPosts') || [];
-      const merged = mergePosts(existing, data.posts);
-      S.set('syncedPosts', merged);
+      // SOSTITUISCE sempre i vecchi post
+      S.set('syncedPosts', data.posts);
       S.set('lastSync', data.lastSync || Date.now());
-      state.posts = merged;
+      state.posts = data.posts;
+      S.del('suggestionCache');
     }
   } catch(e) {}
 
-  // Pulisce l'URL senza ricaricare la pagina
   window.history.replaceState({}, '', window.location.pathname);
 }
 

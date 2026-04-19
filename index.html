@@ -636,6 +636,9 @@ select {
 
       <!-- POSTS SCREEN -->
       <div id="screen-posts" class="screen">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+          <button onclick="clearPosts()" style="font-size:11px;padding:6px 14px;background:none;border:1px solid var(--border2);border-radius:6px;color:var(--muted2);cursor:pointer;font-family:monospace;" onmouseover="this.style.color='var(--danger)';this.style.borderColor='var(--danger)'" onmouseout="this.style.color='var(--muted2)';this.style.borderColor='var(--border2)'">Cancella post salvati</button>
+        </div>
         <div class="posts-table">
           <div class="table-header">
             <div class="th">Post</div>
