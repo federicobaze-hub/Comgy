@@ -647,11 +647,15 @@ function checkUrlSync() {
       S.set('lastSync', data.lastSync || Date.now());
       state.posts = data.posts;
       S.del('suggestionCache');
-      // Render tutto subito
-      renderAll();
-      renderPosts();
+
+      // Aspetta che il DOM sia pronto poi aggiorna tutto
+      setTimeout(() => {
+        renderAll();
+        // Naviga a "I tuoi post" automaticamente
+        navTo('posts', document.querySelector('[data-screen="posts"]'));
+      }, 100);
     }
-  } catch(e) {}
+  } catch(e) { console.error('Sync error:', e); }
 
   window.history.replaceState({}, '', window.location.pathname);
 }

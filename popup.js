@@ -85,7 +85,16 @@ document.getElementById('btnSync').addEventListener('click', async () => {
         if (info?.followers > 0) await chromeSet({ syncedFollowers: info.followers });
       } catch(e) {}
 
-      const payload = encodeURIComponent(JSON.stringify({ posts: response.posts, lastSync: Date.now() }));
+      // Limita a 10 post per evitare URL troppo lunghi
+      const postsForUrl = response.posts.slice(0, 10).map(p => ({
+        text: p.text.slice(0, 500), // tronca testi lunghi
+        likes: p.likes,
+        comments: p.comments,
+        impressions: p.impressions,
+        type: p.type,
+        url: p.url
+      }));
+      const payload = encodeURIComponent(JSON.stringify({ posts: postsForUrl, lastSync: Date.now() }));
       chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
 
       syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
