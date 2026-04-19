@@ -34,8 +34,14 @@ function init() {
   state.memory  = S.get('memory') || [];
 
   if (!state.apiKey || !state.profile) {
-    showScreen('setup');
-    prefillSetup();
+    // Se ci sono post sincronizzati, mostra dashboard comunque
+    if (state.posts.length > 0) {
+      showScreen('dashboard');
+      renderAll();
+    } else {
+      showScreen('setup');
+      prefillSetup();
+    }
     return;
   }
 
@@ -634,11 +640,11 @@ setInterval(() => {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-// Controlla se ci sono dati sync nell'URL (passati dall'estensione)
+// Controlla URL sync PRIMA di init — così i post arrivano sempre
 function checkUrlSync() {
   const params = new URLSearchParams(window.location.search);
   const syncParam = params.get('sync');
-  if (!syncParam) return;
+  if (!syncParam) return false;
 
   try {
     const data = JSON.parse(decodeURIComponent(syncParam));
@@ -647,17 +653,11 @@ function checkUrlSync() {
       S.set('lastSync', data.lastSync || Date.now());
       state.posts = data.posts;
       S.del('suggestionCache');
-
-      // Aspetta che il DOM sia pronto poi aggiorna tutto
-      setTimeout(() => {
-        renderAll();
-        // Naviga a "I tuoi post" automaticamente
-        navTo('posts', document.querySelector('[data-screen="posts"]'));
-      }, 100);
     }
-  } catch(e) { console.error('Sync error:', e); }
+  } catch(e) {}
 
   window.history.replaceState({}, '', window.location.pathname);
+  return true;
 }
 
 function mergePosts(existing, newPosts) {
@@ -670,5 +670,13 @@ function mergePosts(existing, newPosts) {
   return merged.slice(0, 100);
 }
 
+// Avvio
+const hadSync = checkUrlSync();
 init();
-checkUrlSync();
+
+// Se c'era sync nell'URL, vai direttamente a "I tuoi post"
+if (hadSync && state.posts?.length) {
+  setTimeout(() => {
+    navTo('posts', document.querySelector('[data-screen="posts"]'));
+  }, 200);
+}
