@@ -643,11 +643,13 @@ function checkUrlSync() {
   try {
     const data = JSON.parse(decodeURIComponent(syncParam));
     if (data.posts?.length) {
-      // SOSTITUISCE sempre i vecchi post
       S.set('syncedPosts', data.posts);
       S.set('lastSync', data.lastSync || Date.now());
       state.posts = data.posts;
       S.del('suggestionCache');
+      // Render tutto subito
+      renderAll();
+      renderPosts();
     }
   } catch(e) {}
 

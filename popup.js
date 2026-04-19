@@ -200,10 +200,7 @@ results.addEventListener('click', async (e) => {
 
 // ── API Key management ────────────────────────────────────────────────────────
 async function initApiKey() {
-  const { apiKey } = await chromeGet(['apiKey']);
-  if (!apiKey) {
-    document.getElementById('sectionApiKey').style.display = 'block';
-  }
+  // Non mostrare automaticamente — solo via impostazioni
 }
 
 document.getElementById('btnSaveKey').addEventListener('click', async () => {
@@ -212,6 +209,7 @@ document.getElementById('btnSaveKey').addEventListener('click', async () => {
   await chromeSet({ apiKey: key });
   document.getElementById('sectionApiKey').style.display = 'none';
   document.getElementById('apiKeyInput').value = '';
+  alert('✓ API key salvata!');
 });
 
 // ── Bottoni footer ────────────────────────────────────────────────────────────
