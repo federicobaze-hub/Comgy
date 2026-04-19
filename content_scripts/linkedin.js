@@ -33,12 +33,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const key = fullTxt.slice(0, 80);
       if (seen.has(key)) return;
 
-      // Salta bio LinkedIn (contiene | multiple)
+      // Salta bio LinkedIn — contiene | nella prima riga
       const firstLine = fullTxt.split('\n')[0] || '';
-      if ((firstLine.match(/\|/g) || []).length >= 2) return;
+      if (firstLine.includes('|')) return;
 
-      // Salta testi troppo corti o troppo lunghi
+      // Salta testi tipici di sidebar/navigazione
       if (fullTxt.length < 120 || fullTxt.length > 6000) return;
+
+      // Salta se inizia con parole tipiche di UI
+      const lower = fullTxt.toLowerCase();
+      if (lower.startsWith('area manager') || lower.startsWith('consulente') ||
+          lower.startsWith('ottieni') || lower.startsWith('promuovi') ||
+          lower.startsWith('questo post') || lower.startsWith('linkedin')) return;
 
       seen.add(key);
 

@@ -116,25 +116,6 @@ document.getElementById('btnSync').addEventListener('click', async () => {
   document.getElementById('btnSync').disabled = false;
 });
 
-// ── Grab post dal feed ────────────────────────────────────────────────────────
-document.getElementById('btnGrabPost').addEventListener('click', async () => {
-  const btn = document.getElementById('btnGrabPost');
-  btn.textContent = '_ LETTURA...';
-  btn.disabled = true;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_scripts/linkedin.js'] });
-    } catch(e) {}
-    await new Promise(r => setTimeout(r, 400));
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'get_post_text' });
-    if (response?.text) document.getElementById('postInput').value = response.text;
-    else document.getElementById('postInput').placeholder = 'Nessun testo — incolla manualmente';
-  } catch { document.getElementById('postInput').placeholder = 'Errore — incolla manualmente'; }
-  btn.textContent = '↑ LEGGI POST DALLA PAGINA';
-  btn.disabled = false;
-});
-
 // ── Genera commento ───────────────────────────────────────────────────────────
 document.getElementById('btnGenerate').addEventListener('click', async () => {
   const post = document.getElementById('postInput').value.trim();
