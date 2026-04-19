@@ -87,15 +87,17 @@ document.getElementById('btnSync').addEventListener('click', async () => {
 
       // Limita a 10 post per evitare URL troppo lunghi
       const postsForUrl = response.posts.slice(0, 10).map(p => ({
-        text: p.text.slice(0, 500), // tronca testi lunghi
+        text: p.text.slice(0, 500),
         likes: p.likes,
         comments: p.comments,
         impressions: p.impressions,
         type: p.type,
         url: p.url
       }));
-      const payload = encodeURIComponent(JSON.stringify({ posts: postsForUrl, lastSync: Date.now() }));
-      chrome.tabs.create({ url: `${DASHBOARD_URL}?sync=${payload}` });
+      // Salva in chrome.storage — il service worker inietterà nella dashboard
+      await chromeSet({ syncedPosts: response.posts, lastSync: Date.now() });
+      // Apre la dashboard — il background.js inietta i dati automaticamente
+      chrome.tabs.create({ url: DASHBOARD_URL });
 
       syncResult.textContent = `✓ ${response.posts.length} post sincronizzati → Dashboard aperta`;
       syncResult.classList.add('visible');

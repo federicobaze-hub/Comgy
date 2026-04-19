@@ -4,10 +4,11 @@
   "version": "2.0",
   "description": "Sincronizza il tuo profilo LinkedIn e genera commenti calibrati.",
   "permissions": [
-    "activeTab",
+    "tabs",
     "scripting",
     "storage",
-    "downloads"
+    "downloads",
+    "activeTab"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -29,11 +30,16 @@
     }
   ],
   "host_permissions": [
-    "https://api.anthropic.com/*"
+    "https://comgy.vercel.app/*",
+    "https://api.anthropic.com/*",
+    "https://www.linkedin.com/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }

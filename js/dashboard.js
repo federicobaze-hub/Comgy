@@ -34,14 +34,8 @@ function init() {
   state.memory  = S.get('memory') || [];
 
   if (!state.apiKey || !state.profile) {
-    // Se ci sono post sincronizzati, mostra dashboard comunque
-    if (state.posts.length > 0) {
-      showScreen('dashboard');
-      renderAll();
-    } else {
-      showScreen('setup');
-      prefillSetup();
-    }
+    showScreen('setup');
+    prefillSetup();
     return;
   }
 
@@ -640,43 +634,25 @@ setInterval(() => {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-// Controlla URL sync PRIMA di init — così i post arrivano sempre
-function checkUrlSync() {
-  const params = new URLSearchParams(window.location.search);
-  const syncParam = params.get('sync');
-  if (!syncParam) return false;
-
-  try {
-    const data = JSON.parse(decodeURIComponent(syncParam));
-    if (data.posts?.length) {
-      S.set('syncedPosts', data.posts);
-      S.set('lastSync', data.lastSync || Date.now());
-      state.posts = data.posts;
-      S.del('suggestionCache');
-    }
-  } catch(e) {}
-
-  window.history.replaceState({}, '', window.location.pathname);
-  return true;
-}
-
 function mergePosts(existing, newPosts) {
   const merged = [...existing];
   newPosts.forEach(p => {
-    if (!merged.find(e => e.text === p.text || (e.url && e.url === p.url && e.url !== window.location.href))) {
-      merged.push(p);
-    }
+    if (!merged.find(e => e.text === p.text)) merged.push(p);
   });
   return merged.slice(0, 100);
 }
 
-// Avvio
-const hadSync = checkUrlSync();
-init();
+// Ascolta l'evento iniettato dal service worker
+window.addEventListener('comgy_sync', (e) => {
+  const data = e.detail;
+  if (data?.syncedPosts?.length) {
+    state.posts = data.syncedPosts;
+    renderAll();
+    setTimeout(() => {
+      navTo('posts', document.querySelector('[data-screen="posts"]'));
+    }, 100);
+  }
+});
 
-// Se c'era sync nell'URL, vai direttamente a "I tuoi post"
-if (hadSync && state.posts?.length) {
-  setTimeout(() => {
-    navTo('posts', document.querySelector('[data-screen="posts"]'));
-  }, 200);
-}
+// Avvio normale
+init();
