@@ -9,7 +9,7 @@ const spinner    = document.getElementById('spinner');
 const pageBadge  = document.getElementById('pageBadge');
 const sectionSync    = document.getElementById('sectionSync');
 const sectionComment = document.getElementById('sectionComment');
-const sectionApiSetup = document.getElementById('sectionApiSetup');
+
 const syncResult = document.getElementById('syncResult');
 const results    = document.getElementById('results');
 
@@ -40,10 +40,6 @@ async function init() {
   }
 
   // Mostra setup API key solo se non ancora salvata
-  const { apiKey } = await chromeGet(['apiKey']);
-  if (!apiKey && sectionApiSetup) {
-    sectionApiSetup.style.display = 'block';
-  }
 }
 
 function setStatus(type, text) {
@@ -52,13 +48,6 @@ function setStatus(type, text) {
 }
 function setLoading(on) { spinner.classList.toggle('on', on); }
 
-// ── API Key setup (una volta sola) ────────────────────────────────────────────
-document.getElementById('btnSaveApiKey')?.addEventListener('click', async () => {
-  const key = document.getElementById('apiKeySetup').value.trim();
-  if (!key || key.length < 20) { alert('Chiave non valida.'); return; }
-  await chromeSet({ apiKey: key });
-  sectionApiSetup.style.display = 'none';
-});
 
 // ── Sync profilo ──────────────────────────────────────────────────────────────
 document.getElementById('btnSync').addEventListener('click', async () => {
@@ -122,10 +111,7 @@ document.getElementById('btnGenerate').addEventListener('click', async () => {
   if (!post) { alert('Incolla un post prima.'); return; }
 
   const { apiKey, profile } = await chromeGet(['apiKey', 'profile']);
-  if (!apiKey) {
-    if (sectionApiSetup) sectionApiSetup.style.display = 'block';
-    return;
-  }
+  if (!apiKey) { chrome.tabs.create({ url: DASHBOARD_URL }); return; }
 
   const btn = document.getElementById('btnGenerate');
   btn.disabled = true;
@@ -212,14 +198,34 @@ results.addEventListener('click', async (e) => {
   setTimeout(() => btn.textContent = 'COPIA', 1600);
 });
 
+// ── API Key management ────────────────────────────────────────────────────────
+async function initApiKey() {
+  const { apiKey } = await chromeGet(['apiKey']);
+  if (!apiKey) {
+    document.getElementById('sectionApiKey').style.display = 'block';
+  }
+}
+
+document.getElementById('btnSaveKey').addEventListener('click', async () => {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key || key.length < 20) { alert('Chiave non valida.'); return; }
+  await chromeSet({ apiKey: key });
+  document.getElementById('sectionApiKey').style.display = 'none';
+  document.getElementById('apiKeyInput').value = '';
+});
+
 // ── Bottoni footer ────────────────────────────────────────────────────────────
 document.getElementById('btnOpenDashboard').addEventListener('click', () => {
   chrome.tabs.create({ url: DASHBOARD_URL });
 });
 
-document.getElementById('btnSettings').addEventListener('click', () => {
-  chrome.tabs.create({ url: DASHBOARD_URL });
+document.getElementById('btnSettings').addEventListener('click', async () => {
+  const sec = document.getElementById('sectionApiKey');
+  const { apiKey } = await chromeGet(['apiKey']);
+  if (apiKey) document.getElementById('apiKeyInput').value = apiKey;
+  sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
+initApiKey();
